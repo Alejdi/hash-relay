@@ -63,7 +63,7 @@ async def main():
     port = int(os.environ.get("PORT", 8080))
     print("=== ### Relay Server ===", flush=True)
     print(f"Listening on port {port}", flush=True)
-    async with websockets.serve(handler, "0.0.0.0", port, max_size=2*1024*1024):
+    async with websockets.serve(handler, "0.0.0.0", port, max_size=6*1024*1024):
         await asyncio.Future()
 
 if __name__ == "__main__":
