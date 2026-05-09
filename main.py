@@ -2,15 +2,38 @@ import asyncio
 import os
 import websockets
 
-rooms = {}
+rooms = {}        # room_code -> { ws, event, peer }
+active_keys = {}  # license_key -> ws  (one connection per license key)
 
 async def handler(ws):
     code = None
+    license_key = None
     try:
-        code = await ws.recv()
-        if isinstance(code, bytes):
-            code = code.decode("utf-8")
-        code = code.strip()
+        first = await ws.recv()
+        if isinstance(first, bytes):
+            first = first.decode("utf-8")
+        first = first.strip()
+
+        # Format: "<KEY>:<ROOM>" (preferred) or just "<ROOM>" (backward compat)
+        if ":" in first:
+            license_key, code = first.split(":", 1)
+            license_key = license_key.strip()
+            code = code.strip()
+        else:
+            code = first
+
+        # Concurrent session detection: kick previous holder of same key
+        if license_key:
+            old = active_keys.get(license_key)
+            if old is not None and old is not ws:
+                print(f"[{license_key[:8]}...] Kicking previous session", flush=True)
+                try:
+                    await old.send("KICKED")
+                    await old.close()
+                except Exception:
+                    pass
+            active_keys[license_key] = ws
+
         print(f"[{code}] Client joined", flush=True)
 
         if code in rooms:
@@ -58,6 +81,10 @@ async def handler(ws):
     except Exception as e:
         print(f"Error: {e}", flush=True)
         if code and code in rooms: rooms.pop(code, None)
+    finally:
+        # Free the license key only if THIS ws still holds it
+        if license_key and active_keys.get(license_key) is ws:
+            active_keys.pop(license_key, None)
 
 async def main():
     port = int(os.environ.get("PORT", 8080))
